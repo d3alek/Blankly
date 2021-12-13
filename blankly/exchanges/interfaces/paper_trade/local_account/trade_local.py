@@ -31,6 +31,9 @@ class LocalAccount:
             currencies: (dict) with key/value pairs such as {'BTC': {'available: 2.3, 'hold': 0}}
         """
 
+        if 'USD' not in currencies:
+            currencies['USD'] = {'available':0, 'hold': 0}
+
         self.local_account = utils.AttributeDict(currencies)
 
     def override_local_account(self, currencies: dict) -> None:
