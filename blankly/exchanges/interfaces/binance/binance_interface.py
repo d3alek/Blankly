@@ -273,28 +273,28 @@ class BinanceInterface(ExchangeInterface):
             "type": "MARKET",       <-- Similar
             "side": "SELL"      <-- Similar
         }
-        
+
         Actual response buying 20 dollars worth
         {
-            'symbol': 'BTCUSDT', 
-            'orderId': 3038554, 
-            'orderListId': -1, 
-            'clientOrderId': 'xJqha6DQgdYHNdxuVqV2BZ', 
-            'transactTime': 1623800280187, 
-            'price': '0.00000000', 
-            'origQty': '0.00049600', 
-            'executedQty': '0.00049600', 
-            'cummulativeQuoteQty': '19.99128000', 
-            'status': 'FILLED', 
-            'timeInForce': 'GTC', 
-            'type': 'MARKET', 
-            'side': 'BUY', 
+            'symbol': 'BTCUSDT',
+            'orderId': 3038554,
+            'orderListId': -1,
+            'clientOrderId': 'xJqha6DQgdYHNdxuVqV2BZ',
+            'transactTime': 1623800280187,
+            'price': '0.00000000',
+            'origQty': '0.00049600',
+            'executedQty': '0.00049600',
+            'cummulativeQuoteQty': '19.99128000',
+            'status': 'FILLED',
+            'timeInForce': 'GTC',
+            'type': 'MARKET',
+            'side': 'BUY',
             'fills': [
                 {
-                    'price': '40305.00000000', 
-                    'qty': '0.00049600', 
-                    'commission': '0.00000000', 
-                    'commissionAsset': 'BTC', 
+                    'price': '40305.00000000',
+                    'qty': '0.00049600',
+                    'commission': '0.00000000',
+                    'commissionAsset': 'BTC',
                     'tradeId': 564349
                 }
             ]
@@ -316,7 +316,7 @@ class BinanceInterface(ExchangeInterface):
         modified_symbol = utils.to_exchange_symbol(symbol, "binance")
         # The interface here will be the query of order status from this object, because orders are dynamic
         # creatures
-        response = self.calls.order_market(symbol=modified_symbol, side=side, quantity=size)
+        response = self.calls.futures_coin_create_order(symbol=modified_symbol, side=side, quantity=size, type='MARKET')
         response['side'] = response['side'].lower()
         response['type'] = response['type'].lower()
         response['status'] = super().homogenize_order_status('binance', response['status'].lower())
@@ -628,7 +628,7 @@ class BinanceInterface(ExchangeInterface):
         while need > 1000:
             # Close is always 300 points ahead
             window_close = int(window_open + 1000 * resolution)
-            history = history + self.calls.get_klines(symbol=symbol, startTime=window_open * 1000,
+            history = history + self.calls.futures_coin_klines(symbol=symbol, startTime=window_open * 1000,
                                                       endTime=window_close * 1000, interval=gran_string,
                                                       limit=1000)
 
@@ -638,7 +638,7 @@ class BinanceInterface(ExchangeInterface):
             utils.update_progress((initial_need - need) / initial_need)
 
         # Fill the remainder
-        history_block = history + self.calls.get_klines(symbol=symbol, startTime=window_open * 1000,
+        history_block = history + self.calls.futures_coin_klines(symbol=symbol, startTime=window_open * 1000,
                                                         endTime=epoch_stop * 1000, interval=gran_string,
                                                         limit=1000)
 
@@ -742,32 +742,35 @@ class BinanceInterface(ExchangeInterface):
 
         converted_symbol = utils.to_exchange_symbol(symbol, 'binance')
         current_price = None
-        symbol_data = self.calls.get_exchange_info()["symbols"]
+        symbol_data = self.calls.futures_coin_exchange_info()["symbols"]
+
         for i in symbol_data:
             if i["symbol"] == converted_symbol:
                 symbol_data = i
-                current_price = float(self.calls.get_avg_price(symbol=converted_symbol)['price'])
+                current_price = float(self.calls.futures_coin_mark_price(symbol=converted_symbol)[0]['markPrice'])
                 break
         if current_price is None:
             raise LookupError("Specified market not found")
 
         filters = symbol_data["filters"]
-        hard_min_price = float(filters[0]["minPrice"])
-        hard_max_price = float(filters[0]["maxPrice"])
-        quote_increment = float(filters[0]["tickSize"])
+        for f in filters:
+            if f['filterType'] == 'PRICE_FILTER':
+                hard_min_price = float(f["minPrice"])
+                hard_max_price = float(f["maxPrice"])
+                quote_increment = float(f["tickSize"])
 
-        percent_min_price = float(filters[1]["multiplierDown"]) * current_price
-        percent_max_price = float(filters[1]["multiplierUp"]) * current_price
+            if f['filterType'] == 'PERCENT_PRICE':
+                percent_min_price = float(f["multiplierDown"]) * current_price
+                percent_max_price = float(f["multiplierUp"]) * current_price
 
-        min_quantity = float(filters[2]["minQty"])
-        max_quantity = float(filters[2]["maxQty"])
-        base_increment = float(filters[2]["stepSize"])
+            if f['filterType'] == 'MARKET_LOT_SIZE':
+                min_quantity = float(f["minQty"])
+                max_quantity = float(f["maxQty"])
+                base_increment = float(f["stepSize"])
 
-        min_market_notational = float(filters[3]['minNotional'])
-        max_market_notational = 92233720368.547752  # For some reason equal to the first *11 digits* of 2^63 then
-        # it gets weird past the decimal
-
-        max_orders = int(filters[6]["maxNumOrders"])
+            min_market_notational = float(0.001) #TODO
+            max_market_notational = 92233720368.547752  # For some reason equal to the first *11 digits* of 2^63 then
+            # it gets weird past the decimal
 
         if percent_min_price < hard_min_price:
             min_price = hard_min_price
@@ -783,7 +786,6 @@ class BinanceInterface(ExchangeInterface):
             "symbol": symbol,
             "base_asset": symbol_data["baseAsset"],
             "quote_asset": symbol_data["quoteAsset"],
-            "max_orders": max_orders,
             "limit_order": {
                 "base_min_size": min_quantity,  # Minimum size to buy
                 "base_max_size": max_quantity,  # Maximum size to buy
@@ -819,5 +821,5 @@ class BinanceInterface(ExchangeInterface):
         Returns just the price of an asset.
         """
         symbol = utils.to_exchange_symbol(symbol, "binance")
-        response = self.calls.get_symbol_ticker(symbol=symbol)
+        response = self.calls.futures_coin_symbol_ticker(symbol=symbol)[0]
         return float(response['price'])

@@ -307,7 +307,7 @@ def to_exchange_symbol(blankly_symbol, exchange):
 
 def get_base_asset(symbol):
     # Gets the BTC of the BTC-USD
-    return symbol.split('-')[0]
+    return symbol.split('_')[0][:3]
 
 
 def get_quote_asset(symbol):
